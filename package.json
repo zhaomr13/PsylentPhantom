@@ -1,0 +1,15 @@
+{
+  "name": "psylent-phantom",
+  "private": true,
+  "version": "1.0.0",
+  "workspaces": ["apps/*", "packages/*"],
+  "scripts": {
+    "build": "turbo run build",
+    "dev": "turbo run dev",
+    "test": "turbo run test",
+    "lint": "turbo run lint"
+  },
+  "devDependencies": {
+    "turbo": "^2.0.0"
+  }
+}
