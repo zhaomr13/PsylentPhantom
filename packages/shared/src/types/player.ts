@@ -31,6 +31,7 @@ export interface MyPlayerView {
   energy: number;
   isConnected: boolean;
   consecutiveTimeouts: number; // 连续超时次数（用于UI警告）
+  isReady?: boolean; // 是否已选择属性准备就绪
 }
 
 export interface OpponentView {
@@ -45,4 +46,5 @@ export interface OpponentView {
   attributesRevealed: number;
   energy: number;
   isConnected: boolean;
+  isReady?: boolean; // 是否已选择属性准备就绪
 }

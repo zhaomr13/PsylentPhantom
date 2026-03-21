@@ -1,0 +1,43 @@
+@import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+body {
+  @apply bg-gray-900 text-white;
+  font-family: system-ui, -apple-system, sans-serif;
+}
+
+.pixel-font {
+  font-family: 'Press Start 2P', cursive;
+}
+
+.card {
+  @apply relative rounded-lg border-2 border-gray-600 bg-gray-800 p-4 transition-transform hover:scale-105;
+  aspect-ratio: 2/3;
+}
+
+.card-attack {
+  @apply border-red-500 bg-red-900/20;
+}
+
+.card-defense {
+  @apply border-blue-500 bg-blue-900/20;
+}
+
+.card-negotiation {
+  @apply border-purple-500 bg-purple-900/20;
+}
+
+.card-ultimate {
+  @apply border-yellow-500 bg-yellow-900/20;
+}
+
+.pixel-border {
+  box-shadow:
+    -4px 0 0 0 black,
+    4px 0 0 0 black,
+    0 -4px 0 0 black,
+    0 4px 0 0 black;
+}

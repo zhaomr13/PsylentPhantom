@@ -55,7 +55,7 @@ export class GameStateManager {
     });
   }
 
-  getPlayerView(playerId: string): PlayerViewState {
+  getPlayerView(playerId: string, readyPlayers?: Set<string>): PlayerViewState {
     const player = this.state.players.find(p => p.id === playerId);
     if (!player) throw new Error('Player not found');
 
@@ -72,6 +72,7 @@ export class GameStateManager {
       energy: player.energy,
       isConnected: player.isConnected,
       consecutiveTimeouts: player.consecutiveTimeouts,
+      isReady: readyPlayers?.has(player.id),
     };
 
     const opponents: OpponentView[] = this.state.players
@@ -90,6 +91,7 @@ export class GameStateManager {
         attributesRevealed: p.attributesRevealed || 0,
         energy: p.energy,
         isConnected: p.isConnected,
+        isReady: readyPlayers?.has(p.id),
       }));
 
     return {
@@ -97,6 +99,7 @@ export class GameStateManager {
       status: this.state.status,
       turn: this.state.turn,
       currentPlayerId: this.state.currentPlayerId,
+      hostId: this.state.players[0]?.id || '',
       me,
       opponents,
       phase: this.state.phase,

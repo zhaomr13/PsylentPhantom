@@ -24,6 +24,8 @@ export class GameEngine {
     this.stateManager.setStatus('selecting');
   }
 
+  private playerReady: Map<string, boolean> = new Map();
+
   selectAttributes(playerId: string, attributes: [Attribute, Attribute]): void {
     if (attributes.length !== 2) {
       throw new Error('Must select exactly 2 attributes');
@@ -33,19 +35,32 @@ export class GameEngine {
     }
 
     this.playerAttributes.set(playerId, attributes);
-
-    // 检查是否所有玩家都已选择
-    if (this.allPlayersSelected()) {
-      this.initializeGame();
-    }
+    this.playerReady.set(playerId, true);
+    console.log(`[GameEngine] Player ${playerId} selected attributes and is ready`);
   }
 
-  private allPlayersSelected(): boolean {
+  isPlayerReady(playerId: string): boolean {
+    return this.playerReady.has(playerId);
+  }
+
+  getReadyPlayers(): string[] {
+    return Array.from(this.playerReady.keys());
+  }
+
+  canStartGame(): boolean {
     const players = this.stateManager.getState().players;
-    return players.every(p => this.playerAttributes.has(p.id));
+    return players.every(p => this.playerReady.has(p.id));
+  }
+
+  startGamePlay(): void {
+    if (!this.canStartGame()) {
+      throw new Error('Not all players are ready');
+    }
+    this.initializeGame();
   }
 
   private initializeGame(): void {
+    console.log('[GameEngine] Initializing game...');
     const state = this.stateManager.getState();
 
     // 为每个玩家生成牌库
@@ -53,16 +68,19 @@ export class GameEngine {
       const attrs = this.playerAttributes.get(player.id)!;
       player.attributes = attrs;
       player.deck = generateDeck(attrs as [Attribute, Attribute]);
+      console.log(`[GameEngine] Player ${player.id} deck generated with ${player.deck.length} cards`);
 
       // 初始抽牌
       for (let i = 0; i < GAME_CONSTANTS.STARTING_HAND_SIZE; i++) {
         this.drawCard(player);
       }
+      console.log(`[GameEngine] Player ${player.id} hand: ${player.hand.length} cards`);
     });
 
     // 开始游戏
     this.stateManager.setStatus('playing');
     this.stateManager.startTurn(state.players[0].id);
+    console.log('[GameEngine] Game initialized, status: playing, first player:', state.players[0].id);
   }
 
   private drawCard(player: Player): Card | undefined {
@@ -127,11 +145,13 @@ export class GameEngine {
   }
 
   overload(playerId: string, enabled: boolean): void {
+    console.log(`[GameEngine] overload called: ${playerId}, enabled=${enabled}`);
     if (!enabled) {
       this.stateManager.setPhase({
         type: 'action',
         timeout: GAME_CONSTANTS.PHASE_TIMEOUT_ACTION,
       });
+      console.log(`[GameEngine] overload skipped, entering action phase`);
       return;
     }
 
@@ -244,8 +264,8 @@ export class GameEngine {
     return this.stateManager.getState();
   }
 
-  getPlayerView(playerId: string) {
-    return this.stateManager.getPlayerView(playerId);
+  getPlayerView(playerId: string, readyPlayers?: Set<string>) {
+    return this.stateManager.getPlayerView(playerId, readyPlayers);
   }
 
   private getPlayer(playerId: string): Player {

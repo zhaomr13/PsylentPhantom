@@ -40,6 +40,7 @@ export interface PlayerViewState {
   status: GameStatus;
   turn: number;
   currentPlayerId: string;
+  hostId: string;
   me: MyPlayerView;
   opponents: OpponentView[];
   phase: Phase;

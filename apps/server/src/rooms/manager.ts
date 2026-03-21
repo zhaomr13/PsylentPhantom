@@ -7,10 +7,16 @@ export class RoomManager {
   private rooms: Map<string, Room> = new Map();
   private playerRoomMap: Map<string, string> = new Map();
 
+  private generateRoomCode(): string {
+    // Generate 4-digit code
+    return Math.floor(1000 + Math.random() * 9000).toString();
+  }
+
   createRoom(name: string, maxPlayers: number, hostId: string): Room {
+    const roomCode = this.generateRoomCode();
     const room: Room = {
-      id: uuidv4(),
-      name: name || `Room ${Math.floor(Math.random() * 10000)}`,
+      id: roomCode,
+      name: name || `Room ${roomCode}`,
       maxPlayers: Math.min(maxPlayers || 4, 4),
       players: [],
       status: 'waiting',
@@ -56,11 +62,6 @@ export class RoomManager {
 
     room.players.push(player);
     this.playerRoomMap.set(playerId, roomId);
-
-    // 如果人满了，自动开始游戏
-    if (room.players.length === room.maxPlayers) {
-      this.startGame(roomId);
-    }
 
     return room;
   }
