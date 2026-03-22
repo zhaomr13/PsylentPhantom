@@ -17,6 +17,7 @@ export class GameEngine {
   private pendingPeeks: Array<{ sourcePlayerId: string; targetId: string; attribute: Attribute }> = [];
   private responseContext: ResponseContext | null = null;
   private responseTimer: ReturnType<typeof setTimeout> | null = null;
+  private phaseTimers: Map<string, ReturnType<typeof setTimeout>> = new Map();
 
   constructor(roomId: string, players: Player[], config: GameConfig = { resonatePenalty: 'reveal' }) {
     this.stateManager = new GameStateManager(roomId, players);
@@ -81,7 +82,7 @@ export class GameEngine {
 
     // 开始游戏
     this.stateManager.setStatus('playing');
-    this.stateManager.startTurn(state.players[0].id);
+    this.startTurnWithTimer(state.players[0].id);
     console.log('[GameEngine] Game initialized, status: playing, first player:', state.players[0].id);
   }
 
@@ -123,7 +124,10 @@ export class GameEngine {
     return cards;
   }
 
-  selectDrawCard(playerId: string, selectedIndex: number): void {
+  selectDrawCard(playerId: string, selectedIndex: number, isAutoAction = false): void {
+    this.clearPhaseTimer(playerId);
+    if (!isAutoAction) this.resetTimeout(playerId);
+
     const player = this.getPlayer(playerId);
     const options = this.pendingDraws.get(playerId);
 
@@ -149,17 +153,29 @@ export class GameEngine {
       timeout: GAME_CONSTANTS.PHASE_TIMEOUT_OVERLOAD,
       deadline: new Date(Date.now() + GAME_CONSTANTS.PHASE_TIMEOUT_OVERLOAD),
     });
+
+    this.schedulePhaseTimeout(playerId, GAME_CONSTANTS.PHASE_TIMEOUT_OVERLOAD, () => {
+      try { this.overload(playerId, false, true); } catch { /* ignore */ }
+    });
   }
 
-  overload(playerId: string, enabled: boolean): void {
-    console.log(`[GameEngine] overload called: ${playerId}, enabled=${enabled}`);
-    if (!enabled) {
+  overload(playerId: string, takeOverload: boolean, isAutoAction = false): void {
+    this.clearPhaseTimer(playerId);
+    if (!isAutoAction) this.resetTimeout(playerId);
+
+    console.log(`[GameEngine] overload called: ${playerId}, enabled=${takeOverload}`);
+    if (!takeOverload) {
       this.stateManager.setPhase({
         type: 'action',
         timeout: GAME_CONSTANTS.PHASE_TIMEOUT_ACTION,
         deadline: new Date(Date.now() + GAME_CONSTANTS.PHASE_TIMEOUT_ACTION),
       });
       console.log(`[GameEngine] overload skipped, entering action phase`);
+
+      this.schedulePhaseTimeout(playerId, GAME_CONSTANTS.PHASE_TIMEOUT_ACTION, () => {
+        try { this.skipTurn(playerId, true); } catch { /* ignore */ }
+      });
+
       return;
     }
 
@@ -174,9 +190,16 @@ export class GameEngine {
       timeout: GAME_CONSTANTS.PHASE_TIMEOUT_ACTION,
       deadline: new Date(Date.now() + GAME_CONSTANTS.PHASE_TIMEOUT_ACTION),
     });
+
+    this.schedulePhaseTimeout(playerId, GAME_CONSTANTS.PHASE_TIMEOUT_ACTION, () => {
+      try { this.skipTurn(playerId, true); } catch { /* ignore */ }
+    });
   }
 
   playCard(playerId: string, cardId: string, targetId?: string): void {
+    this.clearPhaseTimer(playerId);
+    this.resetTimeout(playerId);
+
     const player = this.getPlayer(playerId);
     const cardIndex = player.hand.findIndex(c => c.id === cardId);
     if (cardIndex === -1) throw new Error('Card not in hand');
@@ -347,6 +370,9 @@ export class GameEngine {
   }
 
   resonate(playerId: string, targetId: string, guess: [Attribute, Attribute]): boolean {
+    this.clearPhaseTimer(playerId);
+    this.resetTimeout(playerId);
+
     const player = this.getPlayer(playerId);
     const target = this.getPlayer(targetId);
 
@@ -393,14 +419,57 @@ export class GameEngine {
     }
   }
 
-  skipTurn(playerId: string): void {
+  skipTurn(playerId: string, isAutoAction = false): void {
+    this.clearPhaseTimer(playerId);
+    if (!isAutoAction) this.resetTimeout(playerId);
     this.endTurn();
   }
 
   private endTurn(): void {
     this.stateManager.nextTurn();
     const nextPlayerId = this.stateManager.getState().currentPlayerId;
-    this.stateManager.startTurn(nextPlayerId);
+    if (this.stateManager.getState().status === 'finished') return;
+    this.startTurnWithTimer(nextPlayerId);
+  }
+
+  private startTurnWithTimer(playerId: string): void {
+    this.stateManager.startTurn(playerId);
+    this.schedulePhaseTimeout(playerId, GAME_CONSTANTS.PHASE_TIMEOUT_DRAW, () => {
+      // Auto-action: pass isAutoAction=true so consecutiveTimeouts increment is NOT reset
+      if (!this.pendingDraws.has(playerId)) {
+        try { this.startDrawPhase(playerId); } catch { return; }
+      }
+      try { this.selectDrawCard(playerId, 0, true); } catch { /* ignore */ }
+    });
+  }
+
+  private clearPhaseTimer(playerId: string): void {
+    const existing = this.phaseTimers.get(playerId);
+    if (existing) {
+      clearTimeout(existing);
+      this.phaseTimers.delete(playerId);
+    }
+  }
+
+  private schedulePhaseTimeout(playerId: string, ms: number, action: () => void): void {
+    this.clearPhaseTimer(playerId);
+    const timer = setTimeout(() => {
+      this.phaseTimers.delete(playerId);
+      const player = this.stateManager.getState().players.find(p => p.id === playerId);
+      if (player) {
+        player.consecutiveTimeouts++;
+        if (player.consecutiveTimeouts >= 3) {
+          player.isConnected = false;
+        }
+      }
+      action();
+    }, ms);
+    this.phaseTimers.set(playerId, timer);
+  }
+
+  private resetTimeout(playerId: string): void {
+    const player = this.stateManager.getState().players.find(p => p.id === playerId);
+    if (player) player.consecutiveTimeouts = 0;
   }
 
   getState() {

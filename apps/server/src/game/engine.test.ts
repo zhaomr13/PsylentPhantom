@@ -201,4 +201,46 @@ describe('GameEngine', () => {
       expect(engine.getResponseContext()).toBeNull();
     });
   });
+
+  describe('phase timers', () => {
+    beforeEach(() => jest.useFakeTimers());
+    afterEach(() => jest.useRealTimers());
+
+    it('should increment consecutiveTimeouts on draw phase timeout', () => {
+      initGame(engine);
+      const p1 = engine.getState().players[0];
+      expect(p1.consecutiveTimeouts).toBe(0);
+
+      // Expire draw phase → auto-selectDrawCard fires (isAutoAction=true, no reset)
+      jest.advanceTimersByTime(GAME_CONSTANTS.PHASE_TIMEOUT_DRAW + 100);
+      expect(p1.consecutiveTimeouts).toBe(1);
+    });
+
+    it('should NOT reset consecutiveTimeouts when auto-action fires', () => {
+      initGame(engine);
+      const p1 = engine.getState().players[0];
+
+      // Manually set counter to 2
+      p1.consecutiveTimeouts = 2;
+
+      // Draw timeout fires auto-action
+      jest.advanceTimersByTime(GAME_CONSTANTS.PHASE_TIMEOUT_DRAW + 100);
+
+      // Counter should be 3 (incremented, not reset to 0)
+      expect(p1.consecutiveTimeouts).toBe(3);
+      expect(p1.isConnected).toBe(false);
+    });
+
+    it('should reset consecutiveTimeouts on real player action', () => {
+      initGame(engine);
+      const p1 = engine.getState().players[0];
+      p1.consecutiveTimeouts = 2;
+
+      // Player manually calls startDrawPhase then selectDrawCard
+      engine.startDrawPhase('p1');
+      engine.selectDrawCard('p1', 0); // real player action, isAutoAction defaults to false
+
+      expect(p1.consecutiveTimeouts).toBe(0);
+    });
+  });
 });

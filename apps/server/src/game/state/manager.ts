@@ -47,9 +47,26 @@ export class GameStateManager {
   }
 
   nextTurn(): void {
-    const currentIndex = this.state.players.findIndex(p => p.id === this.state.currentPlayerId);
-    const nextIndex = (currentIndex + 1) % this.state.players.length;
-    this.state.currentPlayerId = this.state.players[nextIndex].id;
+    const players = this.state.players;
+    let currentIndex = players.findIndex(p => p.id === this.state.currentPlayerId);
+    let nextIndex = (currentIndex + 1) % players.length;
+    let loops = 0;
+
+    while (
+      loops < players.length &&
+      (!players[nextIndex].isConnected || players[nextIndex].consecutiveTimeouts >= 3)
+    ) {
+      nextIndex = (nextIndex + 1) % players.length;
+      loops++;
+    }
+
+    // If all players are disconnected/kicked, end game with no winner
+    if (loops >= players.length) {
+      this.state.status = 'finished';
+      return;
+    }
+
+    this.state.currentPlayerId = players[nextIndex].id;
     this.state.turn++;
   }
 
