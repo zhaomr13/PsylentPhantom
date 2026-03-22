@@ -31,14 +31,7 @@ export function createSocketServer(io: Server): void {
           return;
         }
 
-        // Detect reconnect BEFORE mutating the room (joinRoom will change player.id and isConnected).
-        // A reconnect is when a disconnected player with the same name exists in the room.
-        const truncatedName = (data.playerName || 'Player').slice(0, 20);
-        const wasReconnect = !!(existingRoom?.players.some(
-          p => !p.isConnected && p.name === truncatedName
-        ));
-
-        const { room, reconnectToken } = roomManager.joinRoom(
+        const { room, reconnectToken, wasReconnect } = roomManager.joinRoom(
           data.roomId, socket.id, data.playerName || 'Player'
         );
         socket.join(room.id);

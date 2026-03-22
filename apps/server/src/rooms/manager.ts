@@ -51,7 +51,7 @@ export class RoomManager {
     return { room, reconnectToken };
   }
 
-  joinRoom(roomId: string, playerId: string, playerName: string): { room: Room; reconnectToken: string } {
+  joinRoom(roomId: string, playerId: string, playerName: string): { room: Room; reconnectToken: string; wasReconnect: boolean } {
     const room = this.rooms.get(roomId);
     if (!room) throw new Error('Room not found');
 
@@ -90,10 +90,10 @@ export class RoomManager {
     const reconnectToken = uuidv4();
     this.reconnectTokens.set(playerId, reconnectToken);
 
-    return { room, reconnectToken };
+    return { room, reconnectToken, wasReconnect: false };
   }
 
-  private reconnectPlayer(room: Room, player: Player, newSocketId: string): { room: Room; reconnectToken: string } {
+  private reconnectPlayer(room: Room, player: Player, newSocketId: string): { room: Room; reconnectToken: string; wasReconnect: boolean } {
     const oldId = player.id;
 
     // Clear reconnect timer
@@ -119,7 +119,7 @@ export class RoomManager {
     const reconnectToken = uuidv4();
     this.reconnectTokens.set(newSocketId, reconnectToken);
 
-    return { room, reconnectToken };
+    return { room, reconnectToken, wasReconnect: true };
   }
 
   handleDisconnect(roomId: string, playerId: string): void {
