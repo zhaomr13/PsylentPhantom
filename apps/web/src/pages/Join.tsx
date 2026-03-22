@@ -49,9 +49,12 @@ export function JoinPage() {
     setIsConnecting(true);
     setError('');
 
-    socket.emit('room:join', { roomId: roomCode.trim() }, (result: any) => {
+    socket.emit('room:join', { roomId: roomCode.trim(), playerName: playerName.trim() }, (result: any) => {
       setIsConnecting(false);
       if (result.success) {
+        sessionStorage.setItem('roomId', roomCode.trim());
+        sessionStorage.setItem('playerName', playerName.trim());
+        if (result.reconnectToken) sessionStorage.setItem('reconnectToken', result.reconnectToken);
         navigate(`/room/${roomCode.trim()}`);
       } else {
         setError(result.error || '加入房间失败');

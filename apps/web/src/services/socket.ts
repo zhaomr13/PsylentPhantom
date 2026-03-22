@@ -25,11 +25,14 @@ export interface ServerEvents {
   'game:state': (data: { state: PlayerViewState }) => void;
   'room:update': (data: { players: any[] }) => void;
   'player:disconnected': (data: { playerId: string }) => void;
+  'player:reconnected': (data: { playerId: string; playerName: string }) => void;
+  'game:responseWindow': (data: { pendingDamage: number; timeoutMs: number }) => void;
+  'game:peek': (data: { targetId: string; attribute: string }) => void;
 }
 
 export interface ClientEvents {
-  'room:create': (data: { name: string; maxPlayers: number }, callback: (result: any) => void) => void;
-  'room:join': (data: { roomId: string }, callback: (result: any) => void) => void;
+  'room:create': (data: { name: string; maxPlayers: number; playerName: string }, callback: (result: any) => void) => void;
+  'room:join': (data: { roomId: string; playerName: string }, callback: (result: any) => void) => void;
   'game:selectAttributes': (data: { attributes: [string, string] }, callback: (result: any) => void) => void;
   'game:action': (data: any, callback: (result: any) => void) => void;
 }

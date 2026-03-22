@@ -18,6 +18,26 @@ export function HomePage() {
     socket.on('connect', () => {
       setConnected(true);
       setSocketId(socket.id || null);
+
+      const savedRoomId = sessionStorage.getItem('roomId');
+      const savedPlayerName = sessionStorage.getItem('playerName');
+      if (savedRoomId && savedPlayerName) {
+        socket.emit('room:join', { roomId: savedRoomId, playerName: savedPlayerName }, (result: any) => {
+          if (result.success) {
+            const status = result.room?.status;
+            if (status === 'playing' || status === 'selecting') {
+              navigate(`/game/${savedRoomId}`);
+            } else {
+              navigate(`/room/${savedRoomId}`);
+            }
+          } else {
+            // Session expired — clear storage
+            sessionStorage.removeItem('roomId');
+            sessionStorage.removeItem('playerName');
+            sessionStorage.removeItem('reconnectToken');
+          }
+        });
+      }
     });
 
     socket.on('disconnect', () => {
@@ -32,9 +52,12 @@ export function HomePage() {
     if (!socket) return;
 
     setIsConnecting(true);
-    socket.emit('room:create', { name: roomName, maxPlayers }, (result: any) => {
+    socket.emit('room:create', { name: roomName, maxPlayers, playerName: playerName.trim() }, (result: any) => {
       setIsConnecting(false);
       if (result.success) {
+        sessionStorage.setItem('roomId', result.room.id);
+        sessionStorage.setItem('playerName', playerName.trim());
+        if (result.reconnectToken) sessionStorage.setItem('reconnectToken', result.reconnectToken);
         navigate(`/room/${result.room.id}`);
       } else {
         alert(result.error);
