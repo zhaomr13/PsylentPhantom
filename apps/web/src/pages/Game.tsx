@@ -5,7 +5,8 @@ import { useGameStore } from '../stores/game';
 import { AttributeSelector } from '../components/AttributeSelector';
 import { PlayerBoard } from '../components/PlayerBoard';
 import { Hand } from '../components/Hand';
-import { Card as CardType, Attribute } from '@psylent/shared';
+import { ResonateModal } from '../components';
+import { Card as CardType, Attribute, OpponentView } from '@psylent/shared';
 
 export function GamePage() {
   const { roomId } = useParams<{ roomId: string }>();
@@ -14,6 +15,9 @@ export function GamePage() {
   const [selectedCardId, setSelectedCardId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [drawOptions, setDrawOptions] = useState<CardType[] | null>(null);
+  const [resonateTarget, setResonateTarget] = useState<OpponentView | null>(null);
+  const [responseWindow, setResponseWindow] = useState<{ pendingDamage: number; deadline: number } | null>(null);
+  const [peekedAttributes, setPeekedAttributes] = useState<Array<{ targetName: string; attribute: string }>>([]);
 
   useEffect(() => {
     let socket = getSocket();
@@ -29,7 +33,20 @@ export function GamePage() {
       }
     };
 
+    const handleResponseWindow = (data: { pendingDamage: number; timeoutMs: number }) => {
+      setResponseWindow({ pendingDamage: data.pendingDamage, deadline: Date.now() + data.timeoutMs });
+    };
+
+    const handlePeek = (data: { targetId: string; attribute: string }) => {
+      const targetName = gameState?.opponents.find(o => o.id === data.targetId)?.name ?? data.targetId;
+      setPeekedAttributes(prev => [...prev, { targetName, attribute: data.attribute }]);
+      // Auto-dismiss after 5 seconds
+      setTimeout(() => setPeekedAttributes(prev => prev.slice(1)), 5000);
+    };
+
     socket.on('game:state', handleGameState);
+    socket.on('game:responseWindow', handleResponseWindow);
+    socket.on('game:peek', handlePeek);
 
     socket.emit('game:getState', { roomId }, (result: any) => {
       console.log('[Game] getState:', result?.state?.status, 'ready:', result?.state?.me?.isReady);
@@ -45,6 +62,8 @@ export function GamePage() {
 
     return () => {
       socket.off('game:state', handleGameState);
+      socket.off('game:responseWindow', handleResponseWindow);
+      socket.off('game:peek', handlePeek);
       clearTimeout(timeout);
     };
   }, [roomId, navigate, setGameState, gameState]);
@@ -107,6 +126,34 @@ export function GamePage() {
     if (!socket) return;
 
     socket.emit('game:action', { type: 'overload', enabled });
+  };
+
+  const canResonate = isMyTurn && phase === 'action' && (gameState?.me?.energy ?? 0) >= 3;
+
+  const handleResonateClick = (opponent: OpponentView) => {
+    if (!canResonate) return;
+    setResonateTarget(opponent);
+  };
+
+  const handleResonateConfirm = (guess: [Attribute, Attribute]) => {
+    const socket = getSocket();
+    if (!socket || !resonateTarget) return;
+    socket.emit('game:action', { type: 'resonate', targetId: resonateTarget.id, guess });
+    setResonateTarget(null);
+  };
+
+  const handleRespond = (cardId: string) => {
+    const socket = getSocket();
+    if (!socket) return;
+    socket.emit('game:action', { type: 'respond', cardId });
+    setResponseWindow(null);
+  };
+
+  const handleRespondSkip = () => {
+    const socket = getSocket();
+    if (!socket) return;
+    socket.emit('game:action', { type: 'respondSkip' });
+    setResponseWindow(null);
   };
 
   if (isLoading || !gameState) {
@@ -225,6 +272,7 @@ export function GamePage() {
             key={opponent.id}
             player={opponent}
             isCurrentTurn={gameState.currentPlayerId === opponent.id}
+            onResonateClick={canResonate ? handleResonateClick : undefined}
           />
         ))}
       </div>
@@ -275,8 +323,41 @@ export function GamePage() {
           </div>
         )}
 
+        {/* Response Phase UI — shown to defender when they receive a game:responseWindow */}
+        {phase === 'response' && responseWindow && (
+          <div className="text-center bg-gray-800 border-2 border-red-500 rounded-xl p-6">
+            <div className="text-xl font-bold mb-2 text-red-400">防御机会！</div>
+            <div className="text-gray-300 mb-4">
+              即将受到 <span className="text-red-400 font-bold text-2xl">{responseWindow.pendingDamage}</span> 点伤害
+            </div>
+            <div className="text-sm text-gray-400 mb-4">
+              打出防御牌可以减少伤害，或者选择承受
+            </div>
+            <div className="flex justify-center gap-4 mb-4">
+              {gameState.me.hand
+                .filter(c => c.effects.some(e => e.type === 'shield'))
+                .map(card => (
+                  <button
+                    key={card.id}
+                    onClick={() => handleRespond(card.id)}
+                    className="bg-blue-700 hover:bg-blue-600 border-2 border-blue-400 rounded-lg p-3 w-28"
+                  >
+                    <div className="font-bold text-sm">{card.name}</div>
+                    <div className="text-xs text-gray-300 mt-1">{card.description}</div>
+                  </button>
+                ))}
+            </div>
+            <button
+              onClick={handleRespondSkip}
+              className="px-6 py-2 bg-gray-700 hover:bg-gray-600 rounded font-bold"
+            >
+              承受全部伤害
+            </button>
+          </div>
+        )}
+
         {/* Normal game info (when not in special phase) */}
-        {(!isMyTurn || (phase !== 'draw' && phase !== 'overload')) && (
+        {(!isMyTurn || (phase !== 'draw' && phase !== 'overload')) && !(phase === 'response' && responseWindow) && (
           <div className="text-center">
             <div className="text-2xl font-bold mb-2">
               回合 {gameState.turn}
@@ -317,6 +398,28 @@ export function GamePage() {
           selectedCardId={selectedCardId || undefined}
         />
       </div>
+
+      {/* Peek notifications */}
+      {peekedAttributes.length > 0 && (
+        <div className="fixed top-4 right-4 space-y-2 z-40">
+          {peekedAttributes.map((p, i) => (
+            <div key={i} className="bg-purple-900 border border-purple-400 rounded-lg px-4 py-2 text-sm">
+              偷看到 <span className="font-bold">{p.targetName}</span> 的属性：
+              <span className="text-purple-300 font-bold ml-1">{p.attribute}</span>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Resonate Modal */}
+      {resonateTarget && (
+        <ResonateModal
+          target={resonateTarget}
+          myEnergy={gameState?.me?.energy ?? 0}
+          onConfirm={handleResonateConfirm}
+          onCancel={() => setResonateTarget(null)}
+        />
+      )}
     </div>
   );
 }
