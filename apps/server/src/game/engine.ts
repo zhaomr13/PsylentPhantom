@@ -433,9 +433,16 @@ export class GameEngine {
   }
 
   private startTurnWithTimer(playerId: string): void {
+    if (this.stateManager.getState().status === 'finished') return;
     this.stateManager.startTurn(playerId);
     this.schedulePhaseTimeout(playerId, GAME_CONSTANTS.PHASE_TIMEOUT_DRAW, () => {
       // Auto-action: pass isAutoAction=true so consecutiveTimeouts increment is NOT reset
+      const player = this.stateManager.getState().players.find(p => p.id === playerId);
+      if (player && player.hand.length >= GAME_CONSTANTS.MAX_HAND_SIZE) {
+        // Hand full — skip draw, go straight to overload
+        try { this.overload(playerId, false, true); } catch { /* ignore */ }
+        return;
+      }
       if (!this.pendingDraws.has(playerId)) {
         try { this.startDrawPhase(playerId); } catch { return; }
       }
@@ -455,6 +462,7 @@ export class GameEngine {
     this.clearPhaseTimer(playerId);
     const timer = setTimeout(() => {
       this.phaseTimers.delete(playerId);
+      if (this.stateManager.getState().status === 'finished') return;
       const player = this.stateManager.getState().players.find(p => p.id === playerId);
       if (player) {
         player.consecutiveTimeouts++;
