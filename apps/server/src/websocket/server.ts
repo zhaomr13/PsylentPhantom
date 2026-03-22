@@ -11,9 +11,11 @@ export function createSocketServer(io: Server): void {
     // 房间相关事件
     socket.on('room:create', (data, callback) => {
       try {
-        const room = roomManager.createRoom(data.name, data.maxPlayers, socket.id);
+        const { room, reconnectToken } = roomManager.createRoom(
+          data.name, data.maxPlayers, socket.id, data.playerName || 'Player'
+        );
         socket.join(room.id);
-        callback({ success: true, room });
+        callback({ success: true, room, reconnectToken });
       } catch (error) {
         callback({ success: false, error: (error as Error).message });
       }
@@ -24,16 +26,35 @@ export function createSocketServer(io: Server): void {
         const existingRoom = roomManager.getRoom(data.roomId);
         const isAlreadyInRoom = existingRoom?.players.some(p => p.id === socket.id);
 
-        let room;
         if (isAlreadyInRoom) {
-          room = existingRoom!;
-          socket.join(room.id);
+          callback({ success: true, room: existingRoom!, reconnectToken: null });
+          return;
+        }
+
+        // Detect reconnect BEFORE mutating the room (joinRoom will change player.id and isConnected).
+        // A reconnect is when a disconnected player with the same name exists in the room.
+        const truncatedName = (data.playerName || 'Player').slice(0, 20);
+        const wasReconnect = !!(existingRoom?.players.some(
+          p => !p.isConnected && p.name === truncatedName
+        ));
+
+        const { room, reconnectToken } = roomManager.joinRoom(
+          data.roomId, socket.id, data.playerName || 'Player'
+        );
+        socket.join(room.id);
+
+        if (wasReconnect) {
+          io.to(room.id).emit('player:reconnected', {
+            playerId: socket.id,
+            playerName: room.players.find(p => p.id === socket.id)?.name,
+          });
+          const game = roomManager.getGame(room.id);
+          if (game) broadcastGameState(io, room.id, game);
         } else {
-          room = roomManager.joinRoom(data.roomId, socket.id);
-          socket.join(room.id);
           io.to(room.id).emit('room:update', { players: room.players, maxPlayers: room.maxPlayers });
         }
-        callback({ success: true, room });
+
+        callback({ success: true, room, reconnectToken });
       } catch (error) {
         callback({ success: false, error: (error as Error).message });
       }
@@ -151,9 +172,16 @@ export function createSocketServer(io: Server): void {
         if (!game) throw new Error('Game not started');
 
         const result = handleGameAction(game, socket.id, data);
-
-        // 广播状态更新
         broadcastGameState(io, roomId, game);
+
+        // Emit peek events to source player only
+        const peeks = game.flushPendingPeeks();
+        peeks.forEach(peek => {
+          io.to(peek.sourcePlayerId).emit('game:peek', {
+            targetId: peek.targetId,
+            attribute: peek.attribute,
+          });
+        });
 
         callback?.({ success: true, result });
       } catch (error) {
@@ -189,6 +217,12 @@ function handleGameAction(game: GameEngine, playerId: string, action: any): any 
     case 'resonate':
       game.resonate(playerId, action.targetId, action.guess);
       break;
+    case 'respond':
+      game.respond(playerId, action.cardId);
+      break;
+    case 'respondSkip':
+      game.respondSkip(playerId);
+      break;
     case 'skip':
       game.skipTurn(playerId);
       break;
@@ -201,12 +235,22 @@ function broadcastGameState(io: Server, roomId: string, game: GameEngine): void 
   const state = game.getState();
   const readyPlayers = new Set(game.getReadyPlayers());
 
-  // 向每个玩家发送其专属视图
+  // Emit personalized view to each player
   state.players.forEach(player => {
     const playerView = game.getPlayerView(player.id, readyPlayers);
     io.to(player.id).emit('game:state', { state: playerView });
   });
 
-  // Also broadcast to room for anyone else listening
-  io.to(roomId).emit('game:state', { state: { status: state.status } });
+  // Emit responseWindow to defender if entering response phase
+  const responseCtx = game.getResponseContext();
+  if (state.phase.type === 'response' && responseCtx) {
+    const timeoutMs = Math.max(0, state.phase.deadline.getTime() - Date.now());
+    io.to(responseCtx.defenderId).emit('game:responseWindow', {
+      pendingDamage: responseCtx.pendingDamage,
+      timeoutMs,
+    });
+  }
+
+  // NOTE: Do NOT also emit room-wide game:state. Each player already received their
+  // personalized view above.
 }
