@@ -27,6 +27,7 @@ export function ResonateModal({ target, myEnergy, onConfirm, onCancel }: Resonat
   };
 
   const handleConfirm = () => {
+    if (!canConfirm) return;
     const guess = [...knownAttrs, ...selected] as [Attribute, Attribute];
     onConfirm(guess);
   };

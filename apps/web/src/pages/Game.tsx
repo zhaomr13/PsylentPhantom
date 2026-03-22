@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { connectSocket, getSocket } from '../services/socket';
 import { useGameStore } from '../stores/game';
@@ -12,6 +12,8 @@ export function GamePage() {
   const { roomId } = useParams<{ roomId: string }>();
   const navigate = useNavigate();
   const { gameState, setGameState, setSelectedAttributes } = useGameStore();
+  const opponentsRef = useRef<OpponentView[]>([]);
+  const peekTimersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
   const [selectedCardId, setSelectedCardId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [drawOptions, setDrawOptions] = useState<CardType[] | null>(null);
@@ -29,6 +31,7 @@ export function GamePage() {
       console.log('[Game] state:', data?.state?.status, 'me:', data?.state?.me?.name, 'ready:', data?.state?.me?.isReady);
       if (data?.state) {
         setGameState(data.state);
+        opponentsRef.current = data.state.opponents ?? [];
         setIsLoading(false);
       }
     };
@@ -38,10 +41,11 @@ export function GamePage() {
     };
 
     const handlePeek = (data: { targetId: string; attribute: string }) => {
-      const targetName = gameState?.opponents.find(o => o.id === data.targetId)?.name ?? data.targetId;
+      const targetName = opponentsRef.current.find(o => o.id === data.targetId)?.name ?? data.targetId;
       setPeekedAttributes(prev => [...prev, { targetName, attribute: data.attribute }]);
       // Auto-dismiss after 5 seconds
-      setTimeout(() => setPeekedAttributes(prev => prev.slice(1)), 5000);
+      const timerId = setTimeout(() => setPeekedAttributes(prev => prev.slice(1)), 5000);
+      peekTimersRef.current.push(timerId);
     };
 
     socket.on('game:state', handleGameState);
@@ -65,8 +69,10 @@ export function GamePage() {
       socket.off('game:responseWindow', handleResponseWindow);
       socket.off('game:peek', handlePeek);
       clearTimeout(timeout);
+      peekTimersRef.current.forEach(clearTimeout);
+      peekTimersRef.current = [];
     };
-  }, [roomId, navigate, setGameState, gameState]);
+  }, [roomId, navigate, setGameState]);
 
   // Handle draw phase - need to request draw options from server
   const isMyTurn = gameState?.currentPlayerId === gameState?.me?.id;
@@ -85,6 +91,12 @@ export function GamePage() {
       });
     }
   }, [isMyTurn, phase, drawOptions]);
+
+  useEffect(() => {
+    if (phase !== 'response') {
+      setResponseWindow(null);
+    }
+  }, [phase]);
 
   const handleAttributeSelect = (attrs: [Attribute, Attribute]) => {
     const socket = getSocket();
