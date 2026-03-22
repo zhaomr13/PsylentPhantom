@@ -5,9 +5,10 @@ interface PlayerBoardProps {
   player: OpponentView;
   isCurrentTurn?: boolean;
   isSelf?: boolean;
+  onResonateClick?: (player: OpponentView) => void;
 }
 
-export function PlayerBoard({ player, isCurrentTurn, isSelf }: PlayerBoardProps) {
+export function PlayerBoard({ player, isCurrentTurn, isSelf, onResonateClick }: PlayerBoardProps) {
   const getAttributeStyle = (attr: Attribute) => ({
     backgroundColor: ATTRIBUTE_COLORS[attr].primary,
     color: '#000',
@@ -17,8 +18,10 @@ export function PlayerBoard({ player, isCurrentTurn, isSelf }: PlayerBoardProps)
 
   return (
     <div
+      onClick={() => onResonateClick?.(player)}
       className={`
         relative p-4 rounded-lg border-2 min-w-[180px]
+        ${onResonateClick ? 'cursor-pointer hover:border-purple-400 hover:shadow-purple-400/20 hover:shadow-md' : ''}
         ${isCurrentTurn ? 'border-yellow-400 shadow-lg shadow-yellow-400/30 animate-pulse' : 'border-gray-600'}
         ${isSelf ? 'bg-blue-900/30 border-blue-500' : 'bg-gray-800'}
         transition-all duration-200
