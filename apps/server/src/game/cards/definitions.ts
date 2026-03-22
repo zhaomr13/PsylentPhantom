@@ -72,11 +72,12 @@ export const ATTRIBUTE_CARDS: Record<Attribute, Partial<Record<string, (id: stri
       name: '连锁闪电',
       attribute: 'THUNDER',
       cost: 3,
+      aoe: true,
       effects: [
         { type: 'damage', value: 2, target: 'left' },
         { type: 'damage', value: 2, target: 'right' },
       ],
-      description: '对所有敌人造成2点伤害',
+      description: '对左右相邻玩家各造成2点伤害',
     }),
   },
   HEAT: {
@@ -117,7 +118,7 @@ export const ATTRIBUTE_CARDS: Record<Attribute, Partial<Record<string, (id: stri
           chain: [{ type: 'reveal', value: 1, target: 'self' }],
         },
       ],
-      description: '查看目标玩家手牌顶的一张牌',
+      description: '偷看目标1个隐藏属性（自己揭示1个属性作为代价）',
     }),
     mindBlast: (id: string) => ({
       id: `mind-blast-${id}`,
@@ -152,7 +153,7 @@ export const ATTRIBUTE_CARDS: Record<Attribute, Partial<Record<string, (id: stri
         { type: 'peek', value: 2, target: 'select' },
         { type: 'draw', value: 1, target: 'self' },
       ],
-      description: '查看目标2张手牌，自己抽1张',
+      description: '偷看目标2个隐藏属性，自己再抽1张牌',
     }),
   },
   SPACE: {

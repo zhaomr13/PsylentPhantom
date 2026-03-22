@@ -1,4 +1,4 @@
-import { generateDeck, COMMON_CARDS } from './definitions';
+import { generateDeck, COMMON_CARDS, ATTRIBUTE_CARDS } from './definitions';
 import { GAME_CONSTANTS } from '@psylent/shared';
 
 describe('Card Definitions', () => {
@@ -47,5 +47,15 @@ describe('Card Definitions', () => {
       expect(punch.cost).toBe(0);
       expect(punch.effects[0].value).toBe(1);
     });
+  });
+
+  it('should mark chainLightning as aoe', () => {
+    const card = ATTRIBUTE_CARDS.THUNDER.chainLightning!('test');
+    expect(card.aoe).toBe(true);
+  });
+
+  it('should not mark single-target cards as aoe', () => {
+    const card = ATTRIBUTE_CARDS.THUNDER.thunderStrike!('test');
+    expect(card.aoe).toBeFalsy();
   });
 });
