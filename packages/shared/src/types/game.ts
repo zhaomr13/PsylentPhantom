@@ -16,12 +16,13 @@ export interface PublicLogEntry {
 
 export type GameStatus = 'waiting' | 'selecting' | 'playing' | 'finished';
 
-export type PhaseType = 'draw' | 'overload' | 'action' | 'resolution';
+export type PhaseType = 'draw' | 'overload' | 'action' | 'resolution' | 'response';
 
 export interface Phase {
   type: PhaseType;
   timeout?: number;
   validActions?: string[];
+  deadline: Date;  // required; wall-clock expiry for client countdown timers
 }
 
 export interface GameState {

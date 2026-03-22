@@ -141,6 +141,7 @@ export class GameEngine {
     this.stateManager.setPhase({
       type: 'overload',
       timeout: GAME_CONSTANTS.PHASE_TIMEOUT_OVERLOAD,
+      deadline: new Date(Date.now() + GAME_CONSTANTS.PHASE_TIMEOUT_OVERLOAD),
     });
   }
 
@@ -150,6 +151,7 @@ export class GameEngine {
       this.stateManager.setPhase({
         type: 'action',
         timeout: GAME_CONSTANTS.PHASE_TIMEOUT_ACTION,
+        deadline: new Date(Date.now() + GAME_CONSTANTS.PHASE_TIMEOUT_ACTION),
       });
       console.log(`[GameEngine] overload skipped, entering action phase`);
       return;
@@ -166,6 +168,7 @@ export class GameEngine {
     this.stateManager.setPhase({
       type: 'action',
       timeout: GAME_CONSTANTS.PHASE_TIMEOUT_ACTION,
+      deadline: new Date(Date.now() + GAME_CONSTANTS.PHASE_TIMEOUT_ACTION),
     });
   }
 

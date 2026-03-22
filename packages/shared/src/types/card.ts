@@ -28,4 +28,5 @@ export interface Card {
   cost: number;
   effects: Effect[];
   description: string;
+  aoe?: boolean;
 }

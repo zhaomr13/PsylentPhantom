@@ -11,7 +11,11 @@ export class GameStateManager {
       turn: 0,
       currentPlayerId: '',
       players,
-      phase: { type: 'draw' },
+      phase: {
+        type: 'draw',
+        timeout: GAME_CONSTANTS.PHASE_TIMEOUT_DRAW,
+        deadline: new Date(Date.now() + GAME_CONSTANTS.PHASE_TIMEOUT_DRAW),
+      },
       log: [],
     };
   }
@@ -31,7 +35,11 @@ export class GameStateManager {
 
   startTurn(playerId: string): void {
     this.state.currentPlayerId = playerId;
-    this.state.phase = { type: 'draw', timeout: GAME_CONSTANTS.PHASE_TIMEOUT_DRAW };
+    this.state.phase = {
+      type: 'draw',
+      timeout: GAME_CONSTANTS.PHASE_TIMEOUT_DRAW,
+      deadline: new Date(Date.now() + GAME_CONSTANTS.PHASE_TIMEOUT_DRAW),
+    };
   }
 
   setPhase(phase: Phase): void {
