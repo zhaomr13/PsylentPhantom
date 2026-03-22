@@ -266,6 +266,7 @@ export class GameEngine {
       this.responseTimer = setTimeout(() => {
         this.resolveResponse(null);
       }, RESPONSE_TIMEOUT);
+      if (this.responseTimer.unref) this.responseTimer.unref();
 
       return;
     }
@@ -472,6 +473,8 @@ export class GameEngine {
       }
       action();
     }, ms);
+    // unref so the timer doesn't prevent process exit (relevant in tests)
+    if (timer.unref) timer.unref();
     this.phaseTimers.set(playerId, timer);
   }
 

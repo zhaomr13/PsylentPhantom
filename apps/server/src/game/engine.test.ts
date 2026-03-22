@@ -12,6 +12,10 @@ describe('GameEngine', () => {
   let engine: GameEngine;
   let mockPlayers: Player[];
 
+  afterEach(() => {
+    jest.clearAllTimers();
+  });
+
   beforeEach(() => {
     mockPlayers = [
       {
