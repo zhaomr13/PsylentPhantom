@@ -29,8 +29,9 @@ export function RoomPage() {
       }
 
       // 加入房间
+      const savedPlayerName = sessionStorage.getItem('playerName') || 'Player';
       console.log('[Room] Emitting room:join for', roomId);
-      socket.emit('room:join', { roomId }, (result: any) => {
+      socket.emit('room:join', { roomId, playerName: savedPlayerName }, (result: any) => {
         console.log('[Room] room:join callback:', result);
         if (!result.success) {
           alert(result.error);
@@ -161,7 +162,7 @@ export function RoomPage() {
         {players.length}/{maxPlayers} 玩家已加入
       </p>
 
-      {isHost && players.length >= 2 && (
+      {isHost && players.length >= 1 && (
         <button
           onClick={startGame}
           className="mt-4 px-6 py-2 bg-green-600 hover:bg-green-700 rounded font-bold"

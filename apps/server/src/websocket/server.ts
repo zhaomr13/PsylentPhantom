@@ -73,7 +73,7 @@ export function createSocketServer(io: Server): void {
         const room = roomManager.getRoom(roomId);
         if (!room) throw new Error('Room not found');
         if (room.players[0]?.id !== socket.id) throw new Error('Only host can start game');
-        if (room.players.length < 2) throw new Error('Need at least 2 players');
+        if (room.players.length < 1) throw new Error('No players in room');
 
         roomManager.startGame(roomId);
 
