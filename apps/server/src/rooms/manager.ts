@@ -130,6 +130,13 @@ export class RoomManager {
     if (!player) return;
     player.isConnected = false;
 
+    // Clear any existing reconnect timer before starting a new one
+    const existing = this.reconnectTimers.get(playerId);
+    if (existing) {
+      clearTimeout(existing);
+      this.reconnectTimers.delete(playerId);
+    }
+
     // Start reconnect grace period timer
     const timer = setTimeout(() => {
       this.reconnectTimers.delete(playerId);
@@ -140,6 +147,13 @@ export class RoomManager {
   }
 
   leaveRoom(roomId: string, playerId: string): void {
+    // Cancel any pending reconnect timer
+    const timer = this.reconnectTimers.get(playerId);
+    if (timer) {
+      clearTimeout(timer);
+      this.reconnectTimers.delete(playerId);
+    }
+
     const room = this.rooms.get(roomId);
     if (!room) return;
     room.players = room.players.filter(p => p.id !== playerId);
