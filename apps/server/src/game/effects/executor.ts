@@ -7,6 +7,9 @@ export interface EffectContext {
     players: Player[];
     turn: number;
   };
+  drawCards?: (playerId: string, count: number) => void;
+  onPeek?: (targetId: string, attr: Attribute) => void;
+  pendingDamage?: number;
 }
 
 export interface EffectResult {
@@ -120,9 +123,11 @@ export class EffectExecutor {
           message: `${target.name} 恢复 ${heal} 点生命`,
         };
 
-      case 'draw':
+      case 'draw': {
         const drawCount = typeof effect.value === 'number' ? effect.value : 0;
-        // 实际抽牌逻辑在 GameEngine 中处理
+        if (context.drawCards) {
+          context.drawCards(targetId, drawCount);
+        }
         return {
           type: 'draw',
           success: true,
@@ -130,17 +135,20 @@ export class EffectExecutor {
           targetId,
           message: `${target.name} 抽 ${drawCount} 张牌`,
         };
+      }
 
-      case 'shield':
-        const shieldValue = typeof effect.value === 'number' ? effect.value : 0;
-        // 护盾逻辑在伤害计算时处理
+      case 'shield': {
+        const shieldPercent = typeof effect.value === 'number' ? effect.value : 0;
+        const pending = context.pendingDamage ?? 0;
+        const reducedDamage = Math.floor(pending * (1 - shieldPercent / 100));
         return {
           type: 'shield',
           success: true,
-          value: shieldValue,
+          value: reducedDamage,
           targetId,
-          message: `${target.name} 获得 ${shieldValue}% 护盾`,
+          message: `${target.name} 格挡，最终伤害 ${reducedDamage}`,
         };
+      }
 
       case 'reveal':
         return {
@@ -150,13 +158,21 @@ export class EffectExecutor {
           message: '揭示了信息',
         };
 
-      case 'peek':
+      case 'peek': {
+        const peekCount = typeof effect.value === 'number' ? effect.value : 1;
+        if (context.onPeek) {
+          // Reveal up to peekCount of target's attributes (privately to source)
+          const revealed = target.attributes.slice(0, peekCount);
+          revealed.forEach(attr => context.onPeek!(targetId, attr));
+        }
         return {
           type: 'peek',
           success: true,
+          value: peekCount,
           targetId,
-          message: '查看了信息',
+          message: `偷看了 ${target.name} 的属性`,
         };
+      }
 
       case 'discard':
         const discardCount = typeof effect.value === 'number' ? effect.value : 0;
