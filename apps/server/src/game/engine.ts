@@ -13,6 +13,7 @@ export class GameEngine {
   private config: GameConfig;
   private pendingDraws: Map<string, Card[]> = new Map();
   private playerAttributes: Map<string, Attribute[]> = new Map();
+  private pendingPeeks: Array<{ sourcePlayerId: string; targetId: string; attribute: Attribute }> = [];
 
   constructor(roomId: string, players: Player[], config: GameConfig = { resonatePenalty: 'reveal' }) {
     this.stateManager = new GameStateManager(roomId, players);
@@ -71,9 +72,7 @@ export class GameEngine {
       console.log(`[GameEngine] Player ${player.id} deck generated with ${player.deck.length} cards`);
 
       // 初始抽牌
-      for (let i = 0; i < GAME_CONSTANTS.STARTING_HAND_SIZE; i++) {
-        this.drawCard(player);
-      }
+      this.drawCards(player.id, GAME_CONSTANTS.STARTING_HAND_SIZE);
       console.log(`[GameEngine] Player ${player.id} hand: ${player.hand.length} cards`);
     });
 
@@ -83,22 +82,24 @@ export class GameEngine {
     console.log('[GameEngine] Game initialized, status: playing, first player:', state.players[0].id);
   }
 
-  private drawCard(player: Player): Card | undefined {
-    if (player.deck.length === 0) {
-      // 牌库空了，洗牌
-      if (player.discard.length === 0) return undefined;
-      player.deck = this.shuffle([...player.discard]);
-      player.discard = [];
-    }
-
-    const card = player.deck.pop()!;
-    if (player.hand.length < GAME_CONSTANTS.MAX_HAND_SIZE) {
+  drawCards(playerId: string, count: number): void {
+    const player = this.getPlayer(playerId);
+    for (let i = 0; i < count; i++) {
+      if (player.hand.length >= GAME_CONSTANTS.MAX_HAND_SIZE) break;
+      if (player.deck.length === 0) {
+        if (player.discard.length === 0) break;
+        player.deck = this.shuffle([...player.discard]);
+        player.discard = [];
+      }
+      const card = player.deck.pop()!;
       player.hand.push(card);
-    } else {
-      // 手牌满，直接弃置
-      player.discard.push(card);
     }
-    return card;
+  }
+
+  flushPendingPeeks(): Array<{ sourcePlayerId: string; targetId: string; attribute: Attribute }> {
+    const peeks = [...this.pendingPeeks];
+    this.pendingPeeks = [];
+    return peeks;
   }
 
   getDrawOptions(playerId: string): Card[] | undefined {
@@ -128,12 +129,14 @@ export class GameEngine {
     }
 
     const selected = options[selectedIndex];
-    const revealed = options[1 - selectedIndex];
 
     // 选中的加入手牌
     player.hand.push(selected);
-    // 另一张放回牌库顶（公开）
-    player.deck.push(revealed);
+    // 另一张放回牌库顶（公开），仅当有另一张时
+    if (options.length > 1) {
+      const revealed = options[1 - selectedIndex];
+      player.deck.push(revealed);
+    }
 
     this.pendingDraws.delete(playerId);
 
@@ -161,9 +164,7 @@ export class GameEngine {
     player.hp -= GAME_CONSTANTS.OVERLOAD_DAMAGE;
 
     // 额外抽牌
-    for (let i = 0; i < GAME_CONSTANTS.OVERLOAD_DRAW; i++) {
-      this.drawCard(player);
-    }
+    this.drawCards(playerId, GAME_CONSTANTS.OVERLOAD_DRAW);
 
     this.stateManager.setPhase({
       type: 'action',
@@ -188,6 +189,10 @@ export class GameEngine {
         sourcePlayerId: playerId,
         targetPlayerId: targetId,
         gameState: this.stateManager.getState(),
+        drawCards: this.drawCards.bind(this),
+        onPeek: (tId: string, attribute: Attribute) => {
+          this.pendingPeeks.push({ sourcePlayerId: playerId, targetId: tId, attribute });
+        },
       };
       this.effectExecutor.execute(effect, context);
     }

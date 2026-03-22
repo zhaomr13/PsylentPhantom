@@ -44,31 +44,46 @@ describe('GameEngine', () => {
 
       engine.selectAttributes('p1', ['THUNDER', 'HEAT']);
       engine.selectAttributes('p2', ['PSYCHIC', 'FATE']);
+      engine.startGamePlay();
 
       expect(engine.getState().status).toBe('playing');
       expect(engine.getState().players[0].hand.length).toBe(GAME_CONSTANTS.STARTING_HAND_SIZE);
     });
 
-    it('should handle card play', () => {
+    it('should handle card play (non-damage)', () => {
       engine.startGame();
       engine.selectAttributes('p1', ['THUNDER', 'HEAT']);
       engine.selectAttributes('p2', ['PSYCHIC', 'FATE']);
+      engine.startGamePlay();
 
-      const p1 = engine.getState().players[0];
-      const initialHandSize = p1.hand.length;
+      const state = engine.getState();
+      const p1 = state.players[0];
 
-      // 出第一张牌
-      const cardToPlay = p1.hand[0];
-      engine.playCard(p1.id, cardToPlay.id);
+      // Place a draw card in p1's hand — draw cards have no damage effect
+      const drawCard = {
+        id: 'test-draw-card',
+        type: 'attack' as const,
+        name: '抽牌',
+        cost: 0,
+        effects: [{ type: 'draw' as const, value: 1, target: 'self' as const }],
+        description: '',
+      };
+      p1.hand = [drawCard];
 
-      expect(p1.hand.length).toBe(initialHandSize - 1);
+      engine.playCard('p1', 'test-draw-card');
+
+      // Non-damage card goes directly to discard
       expect(p1.discard.length).toBe(1);
+      expect(p1.discard[0].id).toBe('test-draw-card');
+      // Phase should have advanced past action phase
+      expect(engine.getState().phase.type).not.toBe('response');
     });
 
     it('should handle successful resonate', () => {
       engine.startGame();
       engine.selectAttributes('p1', ['THUNDER', 'HEAT']);
       engine.selectAttributes('p2', ['PSYCHIC', 'FATE']);
+      engine.startGamePlay();
 
       const p1 = engine.getState().players[0];
       const p2 = engine.getState().players[1];
@@ -84,6 +99,7 @@ describe('GameEngine', () => {
       engine.startGame();
       engine.selectAttributes('p1', ['THUNDER', 'HEAT']);
       engine.selectAttributes('p2', ['PSYCHIC', 'FATE']);
+      engine.startGamePlay();
 
       const p1 = engine.getState().players[0];
       const p2 = engine.getState().players[1];
