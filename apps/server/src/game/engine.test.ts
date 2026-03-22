@@ -1,6 +1,13 @@
 import { GameEngine } from './engine';
 import { Player, GAME_CONSTANTS } from '@psylent/shared';
 
+function initGame(engine: GameEngine) {
+  engine.startGame();
+  engine.selectAttributes('p1', ['THUNDER', 'HEAT']);
+  engine.selectAttributes('p2', ['PSYCHIC', 'FATE']);
+  engine.startGamePlay();
+}
+
 describe('GameEngine', () => {
   let engine: GameEngine;
   let mockPlayers: Player[];
@@ -109,6 +116,89 @@ describe('GameEngine', () => {
 
       expect(success).toBe(false);
       expect(p1.energy).toBe(initialEnergy - GAME_CONSTANTS.RESONATE_COST);
+    });
+  });
+
+  describe('response phase', () => {
+    beforeEach(() => {
+      jest.useFakeTimers();
+    });
+
+    afterEach(() => {
+      jest.useRealTimers();
+    });
+
+    it('should enter response phase when single-target damage card is played', () => {
+      initGame(engine);
+      const state = engine.getState();
+      const p1 = state.players[0];
+
+      const punchCard = { id: 'punch-test', type: 'attack' as const, name: '拳击', cost: 0,
+        effects: [{ type: 'damage' as const, value: 1, target: 'left' as const }], description: '' };
+      p1.hand = [punchCard];
+
+      engine.playCard('p1', 'punch-test');
+
+      expect(engine.getState().phase.type).toBe('response');
+      expect(engine.getResponseContext()).not.toBeNull();
+      expect(engine.getResponseContext()!.pendingDamage).toBe(1);
+    });
+
+    it('should apply full damage on timeout', () => {
+      initGame(engine);
+      const state = engine.getState();
+      const p1 = state.players[0];
+      const p2 = state.players[1];
+
+      const punchCard = { id: 'punch-test', type: 'attack' as const, name: '拳击', cost: 0,
+        effects: [{ type: 'damage' as const, value: 3, target: 'left' as const }], description: '' };
+      p1.hand = [punchCard];
+      const initialHp = p2.hp;
+
+      engine.playCard('p1', 'punch-test');
+      jest.runAllTimers();
+
+      expect(p2.hp).toBe(initialHp - 3);
+      expect(engine.getResponseContext()).toBeNull();
+    });
+
+    it('should apply reduced damage when defender uses shield card', () => {
+      initGame(engine);
+      const state = engine.getState();
+      const p1 = state.players[0];
+      const p2 = state.players[1];
+
+      const punchCard = { id: 'punch-test', type: 'attack' as const, name: '拳击', cost: 0,
+        effects: [{ type: 'damage' as const, value: 4, target: 'left' as const }], description: '' };
+      const defendCard = { id: 'defend-test', type: 'defense' as const, name: '防御', cost: 0,
+        effects: [{ type: 'shield' as const, value: 50, target: 'self' as const }], description: '' };
+      p1.hand = [punchCard];
+      p2.hand = [defendCard];
+      const initialHp = p2.hp;
+
+      engine.playCard('p1', 'punch-test');
+      engine.respond('p2', 'defend-test');
+
+      expect(p2.hp).toBe(initialHp - 2); // floor(4 * 0.5) = 2
+      expect(engine.getResponseContext()).toBeNull();
+    });
+
+    it('should apply full damage on respondSkip', () => {
+      initGame(engine);
+      const state = engine.getState();
+      const p1 = state.players[0];
+      const p2 = state.players[1];
+
+      const punchCard = { id: 'punch-test', type: 'attack' as const, name: '拳击', cost: 0,
+        effects: [{ type: 'damage' as const, value: 3, target: 'left' as const }], description: '' };
+      p1.hand = [punchCard];
+      const initialHp = p2.hp;
+
+      engine.playCard('p1', 'punch-test');
+      engine.respondSkip('p2');
+
+      expect(p2.hp).toBe(initialHp - 3);
+      expect(engine.getResponseContext()).toBeNull();
     });
   });
 });

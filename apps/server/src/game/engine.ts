@@ -2,6 +2,7 @@ import { GameStateManager } from './state/manager';
 import { EffectExecutor } from './effects/executor';
 import { generateDeck } from './cards/definitions';
 import { Player, Attribute, Card, GAME_CONSTANTS } from '@psylent/shared';
+import { ResponseContext } from './types';
 
 export interface GameConfig {
   resonatePenalty: 'reveal' | 'skip' | 'energy';
@@ -14,6 +15,8 @@ export class GameEngine {
   private pendingDraws: Map<string, Card[]> = new Map();
   private playerAttributes: Map<string, Attribute[]> = new Map();
   private pendingPeeks: Array<{ sourcePlayerId: string; targetId: string; attribute: Attribute }> = [];
+  private responseContext: ResponseContext | null = null;
+  private responseTimer: ReturnType<typeof setTimeout> | null = null;
 
   constructor(roomId: string, players: Player[], config: GameConfig = { resonatePenalty: 'reveal' }) {
     this.stateManager = new GameStateManager(roomId, players);
@@ -176,14 +179,75 @@ export class GameEngine {
   playCard(playerId: string, cardId: string, targetId?: string): void {
     const player = this.getPlayer(playerId);
     const cardIndex = player.hand.findIndex(c => c.id === cardId);
-
-    if (cardIndex === -1) {
-      throw new Error('Card not in hand');
-    }
+    if (cardIndex === -1) throw new Error('Card not in hand');
 
     const card = player.hand.splice(cardIndex, 1)[0];
 
-    // 执行卡牌效果
+    // Check if this is a single-target damage card that triggers response phase
+    const damageEffects = card.effects.filter(e => e.type === 'damage');
+    const hasSingleTargetDamage =
+      !card.aoe &&
+      damageEffects.length > 0 &&
+      damageEffects.every(e => e.target !== 'all');
+
+    if (hasSingleTargetDamage) {
+      let pendingDamage = 0;
+      const state = this.stateManager.getState();
+
+      for (const effect of card.effects) {
+        if (effect.type === 'damage') {
+          const sourceIndex = state.players.findIndex(p => p.id === playerId);
+          let resolvedTargetId: string;
+          if (effect.target === 'select') {
+            resolvedTargetId = targetId!;
+          } else if (effect.target === 'left') {
+            resolvedTargetId = state.players[(sourceIndex + 1) % state.players.length].id;
+          } else if (effect.target === 'right') {
+            resolvedTargetId = state.players[(sourceIndex - 1 + state.players.length) % state.players.length].id;
+          } else {
+            resolvedTargetId = targetId || state.players[(sourceIndex + 1) % state.players.length].id;
+          }
+
+          const context = {
+            sourcePlayerId: playerId,
+            targetPlayerId: resolvedTargetId,
+            gameState: state,
+            drawCards: this.drawCards.bind(this),
+            onPeek: (tId: string, attribute: Attribute) => {
+              this.pendingPeeks.push({ sourcePlayerId: playerId, targetId: tId, attribute });
+            },
+          };
+          if (!effect.condition || (this.effectExecutor as any)['checkCondition'](effect.condition, context)) {
+            pendingDamage += typeof effect.value === 'number' ? effect.value : 0;
+          }
+          if (!this.responseContext) {
+            this.responseContext = {
+              attackerId: playerId,
+              defenderId: resolvedTargetId,
+              pendingDamage: 0,
+              card,
+            };
+          }
+        }
+      }
+
+      this.responseContext!.pendingDamage = pendingDamage;
+
+      const RESPONSE_TIMEOUT = 10000;
+      this.stateManager.setPhase({
+        type: 'response',
+        timeout: RESPONSE_TIMEOUT,
+        deadline: new Date(Date.now() + RESPONSE_TIMEOUT),
+      });
+
+      this.responseTimer = setTimeout(() => {
+        this.resolveResponse(null);
+      }, RESPONSE_TIMEOUT);
+
+      return;
+    }
+
+    // Non-damage card or AoE: execute all effects immediately
     for (const effect of card.effects) {
       const context = {
         sourcePlayerId: playerId,
@@ -197,18 +261,89 @@ export class GameEngine {
       this.effectExecutor.execute(effect, context);
     }
 
-    // 弃置使用的牌
     player.discard.push(card);
 
-    // 检查胜利条件
     const winCheck = this.stateManager.checkWinCondition();
     if (winCheck.winner) {
       this.stateManager.endGame(winCheck.winner, winCheck.reason);
       return;
     }
 
-    // 进入下一回合
     this.endTurn();
+  }
+
+  respond(defenderId: string, cardId: string): void {
+    if (!this.responseContext) throw new Error('Not in response phase');
+    if (this.responseContext.defenderId !== defenderId) throw new Error('Not your turn to respond');
+
+    const defender = this.getPlayer(defenderId);
+    const cardIndex = defender.hand.findIndex(c => c.id === cardId);
+    if (cardIndex === -1) throw new Error('Card not in hand');
+
+    const card = defender.hand[cardIndex];
+    const shieldEffect = card.effects.find(e => e.type === 'shield');
+    if (!shieldEffect) throw new Error('Card has no shield effect');
+
+    const context = {
+      sourcePlayerId: defenderId,
+      targetPlayerId: defenderId,
+      gameState: this.stateManager.getState(),
+      drawCards: this.drawCards.bind(this),
+      onPeek: () => {},
+      pendingDamage: this.responseContext.pendingDamage,
+    };
+
+    const result = this.effectExecutor.execute(shieldEffect, context);
+    const reducedDamage = result.value ?? this.responseContext.pendingDamage;
+
+    defender.hand.splice(cardIndex, 1);
+    defender.discard.push(card);
+
+    this.resolveResponse(reducedDamage);
+  }
+
+  respondSkip(defenderId: string): void {
+    if (!this.responseContext) throw new Error('Not in response phase');
+    if (this.responseContext.defenderId !== defenderId) throw new Error('Not your turn to respond');
+    this.resolveResponse(null);
+  }
+
+  private resolveResponse(reducedDamage: number | null): void {
+    if (!this.responseContext) return;
+
+    if (this.responseTimer) {
+      clearTimeout(this.responseTimer);
+      this.responseTimer = null;
+    }
+
+    const ctx = this.responseContext;
+    this.responseContext = null;
+
+    const damage = reducedDamage !== null ? reducedDamage : ctx.pendingDamage;
+    const defender = this.getPlayer(ctx.defenderId);
+    defender.hp = Math.max(0, defender.hp - damage);
+
+    const attacker = this.getPlayer(ctx.attackerId);
+    attacker.discard.push(ctx.card);
+
+    const winCheck = this.stateManager.checkWinCondition();
+    if (winCheck.winner) {
+      this.stateManager.endGame(winCheck.winner, winCheck.reason);
+      return;
+    }
+
+    this.endTurn();
+  }
+
+  getResponseContext(): ResponseContext | null {
+    return this.responseContext;
+  }
+
+  updatePlayerId(oldId: string, newId: string): void {
+    if (this.responseContext) {
+      if (this.responseContext.attackerId === oldId) this.responseContext.attackerId = newId;
+      if (this.responseContext.defenderId === oldId) this.responseContext.defenderId = newId;
+    }
   }
 
   resonate(playerId: string, targetId: string, guess: [Attribute, Attribute]): boolean {
