@@ -11,9 +11,11 @@ export function createSocketServer(io: Server): void {
     // 房间相关事件
     socket.on('room:create', (data, callback) => {
       try {
+        console.log('[Server] room:create received, calling createRoom...');
         const { room, reconnectToken } = roomManager.createRoom(
           data.name, data.maxPlayers, socket.id, data.playerName || 'Player'
         );
+        console.log('[Server] createRoom returned room.id:', room.id, 'type:', typeof room.id);
         socket.join(room.id);
         callback({ success: true, room, reconnectToken });
       } catch (error) {
@@ -77,9 +79,12 @@ export function createSocketServer(io: Server): void {
 
         roomManager.startGame(roomId);
 
-        // Broadcast game start to all players
+        // Broadcast game start to all players; also wire up the state-change
+        // callback so timer-triggered actions (response timeout, phase timeouts)
+        // automatically push state to clients.
         const game = roomManager.getGame(roomId);
         if (game) {
+          game.setStateChangeCallback(() => broadcastGameState(io, roomId, game));
           broadcastGameState(io, roomId, game);
         }
       } catch (error) {
@@ -147,9 +152,10 @@ export function createSocketServer(io: Server): void {
         if (!game) throw new Error('Game not started');
 
         const readyPlayers = new Set(game.getReadyPlayers());
+        const attributeOptions = game.getPlayerAttributeOptionsMap();
         console.log('[Server] getState - readyPlayers:', Array.from(readyPlayers), 'socket:', socket.id);
-        const playerView = game.getPlayerView(socket.id, readyPlayers);
-        console.log('[Server] getState - me.isReady:', playerView.me?.isReady);
+        const playerView = game.getPlayerView(socket.id, readyPlayers, attributeOptions);
+        console.log('[Server] getState - me.isReady:', playerView.me?.isReady, 'attrOptions:', playerView.me?.attributeOptions);
         callback({ success: true, state: playerView });
       } catch (error) {
         callback({ success: false, error: (error as Error).message });
@@ -227,10 +233,16 @@ function handleGameAction(game: GameEngine, playerId: string, action: any): any 
 function broadcastGameState(io: Server, roomId: string, game: GameEngine): void {
   const state = game.getState();
   const readyPlayers = new Set(game.getReadyPlayers());
+  const attributeOptions = game.getPlayerAttributeOptionsMap(); // 获取所有玩家的属性牌选项
+
+  console.log('[broadcastGameState] Players:', state.players.map(p => p.id));
+  console.log('[broadcastGameState] attributeOptions:', attributeOptions);
+  console.log('[broadcastGameState] attributeOptions size:', attributeOptions?.size);
 
   // Emit personalized view to each player
   state.players.forEach(player => {
-    const playerView = game.getPlayerView(player.id, readyPlayers);
+    const playerView = game.getPlayerView(player.id, readyPlayers, attributeOptions);
+    console.log(`[broadcastGameState] Player ${player.id} view attributeOptions:`, playerView.me?.attributeOptions);
     io.to(player.id).emit('game:state', { state: playerView });
   });
 

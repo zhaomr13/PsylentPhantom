@@ -1,4 +1,4 @@
-import { GameState, PlayerViewState, Player, Phase, GameStatus, MyPlayerView, OpponentView, PublicLogEntry } from '@psylent/shared';
+import { GameState, PlayerViewState, Player, Phase, GameStatus, MyPlayerView, OpponentView, PublicLogEntry, Attribute } from '@psylent/shared';
 import { GAME_CONSTANTS } from '@psylent/shared';
 
 export class GameStateManager {
@@ -80,7 +80,7 @@ export class GameStateManager {
     });
   }
 
-  getPlayerView(playerId: string, readyPlayers?: Set<string>): PlayerViewState {
+  getPlayerView(playerId: string, readyPlayers?: Set<string>, attributeOptions?: Map<string, Attribute[]>): PlayerViewState {
     const player = this.state.players.find(p => p.id === playerId);
     if (!player) throw new Error('Player not found');
 
@@ -94,6 +94,7 @@ export class GameStateManager {
       deckCount: player.deck.length,
       discard: player.discard,
       attributes: player.attributes,
+      attributeOptions: attributeOptions?.get(playerId), // 玩家被分配的3张属性牌
       energy: player.energy,
       isConnected: player.isConnected,
       consecutiveTimeouts: player.consecutiveTimeouts,
@@ -154,9 +155,9 @@ export class GameStateManager {
   }
 
   checkWinCondition(): { winner: string | null; reason: string } {
-    // 检查击杀胜利
+    // 检查击杀胜利 — only meaningful when 2+ players exist
     const alivePlayers = this.state.players.filter(p => p.hp > 0);
-    if (alivePlayers.length === 1) {
+    if (this.state.players.length > 1 && alivePlayers.length === 1) {
       return { winner: alivePlayers[0].id, reason: 'kill' };
     }
 

@@ -13,22 +13,33 @@ export function HomePage() {
   const { setConnected, setSocketId } = useGameStore();
 
   useEffect(() => {
+    // Clear invalid room IDs (UUID format) - force fresh start
+    const savedRoomId = sessionStorage.getItem('roomId');
+    if (savedRoomId && savedRoomId.includes('-')) {
+      console.log('[Home] Clearing invalid UUID roomId:', savedRoomId);
+      sessionStorage.removeItem('roomId');
+      sessionStorage.removeItem('playerName');
+      sessionStorage.removeItem('reconnectToken');
+    }
+
     const socket = connectSocket();
 
     socket.on('connect', () => {
       setConnected(true);
       setSocketId(socket.id || null);
 
-      const savedRoomId = sessionStorage.getItem('roomId');
+      // Re-check after connect (UUID might have been cleared above)
+      const currentRoomId = sessionStorage.getItem('roomId');
       const savedPlayerName = sessionStorage.getItem('playerName');
-      if (savedRoomId && savedPlayerName) {
-        socket.emit('room:join', { roomId: savedRoomId, playerName: savedPlayerName }, (result: any) => {
+      // Only auto-join if roomId is valid (4 digits, not UUID)
+      if (currentRoomId && savedPlayerName && /^\d{4}$/.test(currentRoomId)) {
+        socket.emit('room:join', { roomId: currentRoomId, playerName: savedPlayerName }, (result: any) => {
           if (result.success) {
             const status = result.room?.status;
             if (status === 'playing' || status === 'selecting') {
-              navigate(`/game/${savedRoomId}`);
+              navigate(`/game/${currentRoomId}`);
             } else {
-              navigate(`/room/${savedRoomId}`);
+              navigate(`/room/${currentRoomId}`);
             }
           } else {
             // Session expired — clear storage
@@ -52,9 +63,12 @@ export function HomePage() {
     if (!socket) return;
 
     setIsConnecting(true);
+    console.log('[Home] Creating room...');
     socket.emit('room:create', { name: roomName, maxPlayers, playerName: playerName.trim() }, (result: any) => {
+      console.log('[Home] room:create result:', result);
       setIsConnecting(false);
       if (result.success) {
+        console.log('[Home] Server returned room.id:', result.room?.id, 'type:', typeof result.room?.id);
         sessionStorage.setItem('roomId', result.room.id);
         sessionStorage.setItem('playerName', playerName.trim());
         if (result.reconnectToken) sessionStorage.setItem('reconnectToken', result.reconnectToken);

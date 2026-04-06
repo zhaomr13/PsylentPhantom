@@ -5,7 +5,9 @@ let socket: Socket | null = null;
 
 export function connectSocket(): Socket {
   if (!socket) {
-    socket = io(import.meta.env.VITE_SERVER_URL || 'http://localhost:3001');
+    const serverUrl = 'http://localhost:3001';
+    console.log('[Socket] Connecting to:', serverUrl);
+    socket = io(serverUrl);
   }
   return socket;
 }

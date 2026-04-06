@@ -28,6 +28,7 @@ export interface MyPlayerView {
   deckCount: number;
   discard: Card[];
   attributes: Attribute[];
+  attributeOptions?: Attribute[]; // 玩家被分配的3张属性牌选项（选择阶段使用）
   energy: number;
   isConnected: boolean;
   consecutiveTimeouts: number; // 连续超时次数（用于UI警告）

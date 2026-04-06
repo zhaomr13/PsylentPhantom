@@ -8,16 +8,28 @@ export interface GameConfig {
   resonatePenalty: 'reveal' | 'skip' | 'energy';
 }
 
+// 12张属性牌（6个属性×2张）
+const ATTRIBUTE_CARDS: Attribute[] = [
+  'HEAT', 'HEAT',
+  'THUNDER', 'THUNDER',
+  'SPACE', 'SPACE',
+  'PSYCHIC', 'PSYCHIC',
+  'FATE', 'FATE',
+  'SPIRIT', 'SPIRIT',
+];
+
 export class GameEngine {
   private stateManager: GameStateManager;
   private effectExecutor: EffectExecutor;
   private config: GameConfig;
   private pendingDraws: Map<string, Card[]> = new Map();
   private playerAttributes: Map<string, Attribute[]> = new Map();
+  private playerAttributeOptions: Map<string, Attribute[]> = new Map(); // 每个玩家被分配的3张属性牌
   private pendingPeeks: Array<{ sourcePlayerId: string; targetId: string; attribute: Attribute }> = [];
   private responseContext: ResponseContext | null = null;
   private responseTimer: ReturnType<typeof setTimeout> | null = null;
   private phaseTimers: Map<string, ReturnType<typeof setTimeout>> = new Map();
+  private onStateChange: (() => void) | null = null;
 
   constructor(roomId: string, players: Player[], config: GameConfig = { resonatePenalty: 'reveal' }) {
     this.stateManager = new GameStateManager(roomId, players);
@@ -25,8 +37,38 @@ export class GameEngine {
     this.config = config;
   }
 
+  setStateChangeCallback(cb: () => void): void {
+    this.onStateChange = cb;
+  }
+
   startGame(): void {
+    // 分配属性牌给玩家
+    this.distributeAttributeCards();
     this.stateManager.setStatus('selecting');
+  }
+
+  // 分配属性牌：12张牌（6属性×2张）分给每个玩家3张
+  private distributeAttributeCards(): void {
+    const players = this.stateManager.getState().players;
+    const shuffledAttributes = this.shuffle([...ATTRIBUTE_CARDS]);
+
+    // 每个玩家分配3张
+    players.forEach((player, index) => {
+      const startIdx = index * 3;
+      const options = shuffledAttributes.slice(startIdx, startIdx + 3);
+      this.playerAttributeOptions.set(player.id, options);
+      console.log(`[GameEngine] Player ${player.id} received attribute options:`, options);
+    });
+  }
+
+  // 获取玩家被分配的属性牌选项
+  getPlayerAttributeOptions(playerId: string): Attribute[] | undefined {
+    return this.playerAttributeOptions.get(playerId);
+  }
+
+  // 获取所有玩家的属性牌选项Map（用于WebSocket广播）
+  getPlayerAttributeOptionsMap(): Map<string, Attribute[]> {
+    return this.playerAttributeOptions;
   }
 
   private playerReady: Map<string, boolean> = new Map();
@@ -39,9 +81,20 @@ export class GameEngine {
       throw new Error('Attributes must be different');
     }
 
+    // 验证玩家只能从分配的3张牌中选择
+    const options = this.playerAttributeOptions.get(playerId);
+    if (!options) {
+      throw new Error('No attribute options available for player');
+    }
+
+    const validSelection = attributes.every(attr => options.includes(attr));
+    if (!validSelection) {
+      throw new Error(`Invalid selection. Must choose 2 from: ${options.join(', ')}`);
+    }
+
     this.playerAttributes.set(playerId, attributes);
     this.playerReady.set(playerId, true);
-    console.log(`[GameEngine] Player ${playerId} selected attributes and is ready`);
+    console.log(`[GameEngine] Player ${playerId} selected attributes:`, attributes);
   }
 
   isPlayerReady(playerId: string): boolean {
@@ -54,6 +107,8 @@ export class GameEngine {
 
   canStartGame(): boolean {
     const players = this.stateManager.getState().players;
+    // 至少需要2人才能开始游戏
+    if (players.length < 2) return false;
     return players.every(p => this.playerReady.has(p.id));
   }
 
@@ -204,7 +259,18 @@ export class GameEngine {
     const cardIndex = player.hand.findIndex(c => c.id === cardId);
     if (cardIndex === -1) throw new Error('Card not in hand');
 
-    const card = player.hand.splice(cardIndex, 1)[0];
+    const card = player.hand[cardIndex];
+
+    // 检查卡牌属性要求：如果卡牌有属性，玩家必须有该属性才能打出
+    if (card.attribute) {
+      const playerAttrs = this.playerAttributes.get(playerId);
+      if (!playerAttrs || !playerAttrs.includes(card.attribute)) {
+        throw new Error(`Cannot play ${card.name}: requires ${card.attribute} attribute`);
+      }
+    }
+
+    // 属性检查通过，移除手牌
+    player.hand.splice(cardIndex, 1)[0];
 
     // Check if this is a single-target damage card that triggers response phase
     const damageEffects = card.effects.filter(e => e.type === 'damage');
@@ -265,6 +331,7 @@ export class GameEngine {
 
       this.responseTimer = setTimeout(() => {
         this.resolveResponse(null);
+        this.onStateChange?.();
       }, RESPONSE_TIMEOUT);
       if (this.responseTimer.unref) this.responseTimer.unref();
 
@@ -367,6 +434,19 @@ export class GameEngine {
     if (this.responseContext) {
       if (this.responseContext.attackerId === oldId) this.responseContext.attackerId = newId;
       if (this.responseContext.defenderId === oldId) this.responseContext.defenderId = newId;
+    }
+    if (this.playerAttributes.has(oldId)) {
+      this.playerAttributes.set(newId, this.playerAttributes.get(oldId)!);
+      this.playerAttributes.delete(oldId);
+    }
+    if (this.playerReady.has(oldId)) {
+      this.playerReady.set(newId, this.playerReady.get(oldId)!);
+      this.playerReady.delete(oldId);
+    }
+    const pendingDraw = this.pendingDraws.get(oldId);
+    if (pendingDraw) {
+      this.pendingDraws.set(newId, pendingDraw);
+      this.pendingDraws.delete(oldId);
     }
   }
 
@@ -472,6 +552,7 @@ export class GameEngine {
         }
       }
       action();
+      this.onStateChange?.();
     }, ms);
     // unref so the timer doesn't prevent process exit (relevant in tests)
     if (timer.unref) timer.unref();
@@ -487,8 +568,8 @@ export class GameEngine {
     return this.stateManager.getState();
   }
 
-  getPlayerView(playerId: string, readyPlayers?: Set<string>) {
-    return this.stateManager.getPlayerView(playerId, readyPlayers);
+  getPlayerView(playerId: string, readyPlayers?: Set<string>, attributeOptions?: Map<string, Attribute[]>) {
+    return this.stateManager.getPlayerView(playerId, readyPlayers, attributeOptions);
   }
 
   private getPlayer(playerId: string): Player {

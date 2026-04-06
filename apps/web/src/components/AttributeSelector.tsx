@@ -4,10 +4,14 @@ import { ATTRIBUTES, Attribute, ATTRIBUTE_COLORS } from '@psylent/shared';
 interface AttributeSelectorProps {
   onSelect: (attributes: [Attribute, Attribute]) => void;
   disabled?: boolean;
+  options?: Attribute[]; // 玩家被分配的3张属性牌
 }
 
-export function AttributeSelector({ onSelect, disabled }: AttributeSelectorProps) {
+export function AttributeSelector({ onSelect, disabled, options }: AttributeSelectorProps) {
   const [selected, setSelected] = useState<Attribute[]>([]);
+
+  // 如果没有提供选项，使用所有属性（向后兼容）
+  const availableAttributes = options ?? ATTRIBUTES;
 
   const handleAttributeClick = (attr: Attribute) => {
     if (disabled) return;
@@ -37,11 +41,11 @@ export function AttributeSelector({ onSelect, disabled }: AttributeSelectorProps
     <div className="flex flex-col items-center gap-8 p-8 bg-gray-900/90 rounded-2xl border-2 border-gray-700">
       <div className="text-center">
         <h2 className="text-2xl font-bold mb-2 pixel-font">选择你的属性</h2>
-        <p className="text-gray-400">请选择2个属性作为你的隐藏身份</p>
+        <p className="text-gray-400">系统已为你分配3张属性牌，请选择其中2张作为你的隐藏身份</p>
       </div>
 
       <div className="grid grid-cols-3 gap-4">
-        {ATTRIBUTES.map((attr) => {
+        {availableAttributes.map((attr) => {
           const isSelected = selected.includes(attr);
           const colors = ATTRIBUTE_COLORS[attr];
 

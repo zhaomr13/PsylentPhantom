@@ -1,5 +1,9 @@
 import { Card, Attribute, GAME_CONSTANTS } from '@psylent/shared';
+import { ACTION_CARDS, getAllPlayableCards } from './actionCards';
 
+export { ACTION_CARDS, getAllPlayableCards };
+
+// 保留旧的COMMON_CARDS用于向后兼容，但不再使用
 export const COMMON_CARDS = {
   punch: (id: string): Card => ({
     id: `punch-${id}`,
@@ -218,36 +222,34 @@ export const WILD_CARD = (id: string): Card => ({
 });
 
 export function generateDeck(attributes: [Attribute, Attribute]): Card[] {
-  const deck: Card[] = [];
-  let cardId = 0;
+  // 使用真实的38张行动卡
+  const allCards = getAllPlayableCards();
 
-  // 通用攻击牌：8张
-  for (let i = 0; i < 4; i++) deck.push(COMMON_CARDS.punch(`g-${cardId++}`));
-  for (let i = 0; i < 2; i++) deck.push(COMMON_CARDS.kick(`g-${cardId++}`));
-  for (let i = 0; i < 2; i++) deck.push(COMMON_CARDS.heavyStrike(`g-${cardId++}`));
+  // 筛选与玩家属性匹配的卡牌优先加入
+  const primaryAttr = attributes[0];
+  const secondaryAttr = attributes[1];
 
-  // 通用防御牌：4张
-  for (let i = 0; i < 3; i++) deck.push(COMMON_CARDS.defend(`g-${cardId++}`));
-  deck.push(COMMON_CARDS.dodge(`g-${cardId++}`));
+  const attrCards = allCards.filter(c => c.attribute === primaryAttr || c.attribute === secondaryAttr);
+  const neutralCards = allCards.filter(c => !c.attribute);
 
-  // 属性专属牌：每个属性6张（攻击×2 + 必杀技×1 + 交涉×2，根据实际定义调整）
-  attributes.forEach((attr) => {
-    const cards = ATTRIBUTE_CARDS[attr];
-    const factories = Object.values(cards).filter((f): f is (id: string) => Card => f !== undefined);
+  // 构建卡组：优先使用属性相关卡牌，然后用中立卡牌填充
+  let deck: Card[] = [];
 
-    factories.forEach((factory) => {
-      const cardType = factory('test').type;
-      // 攻击牌2张，其他各1张
-      const count = cardType === 'attack' ? 2 : 1;
-      for (let i = 0; i < count; i++) {
-        deck.push(factory(`a-${cardId++}`));
-      }
-    });
-  });
+  // 添加属性卡牌（每种属性最多8张）
+  deck.push(...attrCards.slice(0, 16));
 
-  // 万能牌：剩余数量（约6-10张）
-  const wildCount = GAME_CONSTANTS.DECK_SIZE - deck.length;
-  for (let i = 0; i < wildCount; i++) deck.push(WILD_CARD(`w-${cardId++}`));
+  // 添加中立卡牌填充到33张
+  const neededCards = GAME_CONSTANTS.DECK_SIZE - deck.length;
+  deck.push(...neutralCards.slice(0, neededCards));
+
+  // 如果还不够，继续添加随机卡牌
+  while (deck.length < GAME_CONSTANTS.DECK_SIZE) {
+    const randomCard = allCards[Math.floor(Math.random() * allCards.length)];
+    deck.push({ ...randomCard, id: `${randomCard.id}-${deck.length}` });
+  }
+
+  // 截取到标准卡组大小
+  deck = deck.slice(0, GAME_CONSTANTS.DECK_SIZE);
 
   // 洗牌
   return shuffle(deck);

@@ -19,6 +19,7 @@ export class RoomManager {
 
   createRoom(name: string, maxPlayers: number, hostId: string, playerName: string): { room: Room; reconnectToken: string } {
     const roomCode = this.generateRoomCode();
+    console.log('[RoomManager] Generated roomCode:', roomCode);
     const room: Room = {
       id: roomCode,
       name: name || `Room ${roomCode}`,

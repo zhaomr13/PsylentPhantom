@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { connectSocket, getSocket } from '../services/socket';
 import { useGameStore } from '../stores/game';
@@ -6,6 +6,7 @@ import { useGameStore } from '../stores/game';
 export function RoomPage() {
   const { roomId } = useParams<{ roomId: string }>();
   const navigate = useNavigate();
+  const hasNavigated = useRef(false); // 防止重复导航
 
   const { players, setPlayers, setCurrentRoom } = useGameStore();
   const [maxPlayers, setMaxPlayers] = useState(4);
@@ -80,12 +81,13 @@ export function RoomPage() {
 
     // 监听游戏开始 - 只在游戏真正开始时跳转
     const handleGameState = (data: any) => {
-      console.log('[Room] game:state received:', JSON.stringify(data));
-      if (data?.state?.status === 'playing' || data?.state?.status === 'selecting') {
+      console.log('[Room] game:state received, status:', data?.state?.status, 'attrOptions:', data?.state?.me?.attributeOptions);
+      if ((data?.state?.status === 'playing' || data?.state?.status === 'selecting') && !hasNavigated.current) {
         console.log('[Room] Navigating to game page');
+        hasNavigated.current = true;
         navigate(`/game/${roomId}`);
       } else {
-        console.log('[Room] Not navigating, status:', data?.state?.status);
+        console.log('[Room] Not navigating, status:', data?.state?.status, 'alreadyNavigated:', hasNavigated.current);
       }
     };
     socket.on('game:state', handleGameState);

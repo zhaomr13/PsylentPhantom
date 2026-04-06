@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { connectSocket, getSocket } from '../services/socket';
 import { useGameStore } from '../stores/game';
-import { AttributeSelector } from '../components/AttributeSelector';
+import { AttributeCardSelector } from '../components/AttributeCardSelector';
 import { PlayerBoard } from '../components/PlayerBoard';
 import { Hand } from '../components/Hand';
 import { ResonateModal } from '../components';
@@ -28,7 +28,7 @@ export function GamePage() {
     }
 
     const handleGameState = (data: any) => {
-      console.log('[Game] state:', data?.state?.status, 'me:', data?.state?.me?.name, 'ready:', data?.state?.me?.isReady);
+      console.log('[Game] state received:', data?.state?.status, 'me:', data?.state?.me?.name, 'attrOptions:', data?.state?.me?.attributeOptions);
       if (data?.state) {
         setGameState(data.state);
         opponentsRef.current = data.state.opponents ?? [];
@@ -60,15 +60,10 @@ export function GamePage() {
       }
     });
 
-    const timeout = setTimeout(() => {
-      if (!gameState) navigate(`/room/${roomId}`);
-    }, 5000);
-
     return () => {
       socket.off('game:state', handleGameState);
       socket.off('game:responseWindow', handleResponseWindow);
       socket.off('game:peek', handlePeek);
-      clearTimeout(timeout);
       peekTimersRef.current.forEach(clearTimeout);
       peekTimersRef.current = [];
     };
@@ -157,14 +152,27 @@ export function GamePage() {
   const handleRespond = (cardId: string) => {
     const socket = getSocket();
     if (!socket) return;
-    socket.emit('game:action', { type: 'respond', cardId });
+    socket.emit('game:action', { type: 'respond', cardId }, (result: any) => {
+      if (!result?.success) {
+        // Timer may have already resolved the response; request fresh state
+        socket.emit('game:getState', { roomId }, (r: any) => {
+          if (r?.state) { setGameState(r.state); setIsLoading(false); }
+        });
+      }
+    });
     setResponseWindow(null);
   };
 
   const handleRespondSkip = () => {
     const socket = getSocket();
     if (!socket) return;
-    socket.emit('game:action', { type: 'respondSkip' });
+    socket.emit('game:action', { type: 'respondSkip' }, (result: any) => {
+      if (!result?.success) {
+        socket.emit('game:getState', { roomId }, (r: any) => {
+          if (r?.state) { setGameState(r.state); setIsLoading(false); }
+        });
+      }
+    });
     setResponseWindow(null);
   };
 
@@ -253,9 +261,35 @@ export function GamePage() {
     }
 
     // Show attribute selector for players who haven't selected
+    // 获取玩家被分配的3张属性牌选项
+    const attributeOptions = gameState.me?.attributeOptions as Attribute[] | undefined;
+    console.log('[Game] Selecting phase - me:', gameState.me?.id, 'attributeOptions:', attributeOptions, 'me:', gameState.me);
     return (
       <div className="min-h-screen flex items-center justify-center">
-        <AttributeSelector onSelect={handleAttributeSelect} />
+        <AttributeCardSelector onSelect={handleAttributeSelect} options={attributeOptions} />
+      </div>
+    );
+  }
+
+  // Game finished screen
+  if (gameState.status === 'finished') {
+    const iWon = gameState.winner === gameState.me?.id;
+    return (
+      <div className="min-h-screen flex flex-col items-center justify-center p-4">
+        <div className={`text-5xl font-bold mb-6 ${iWon ? 'text-yellow-400' : 'text-gray-400'}`}>
+          {iWon ? '胜利！' : '游戏结束'}
+        </div>
+        {gameState.winner && (
+          <div className="text-xl text-gray-300 mb-8">
+            {iWon ? '你获得了胜利！' : `${gameState.opponents?.find(o => o.id === gameState.winner)?.name ?? '对手'} 获胜`}
+          </div>
+        )}
+        <button
+          onClick={() => navigate('/')}
+          className="px-8 py-3 bg-blue-600 hover:bg-blue-500 rounded-lg font-bold text-lg"
+        >
+          返回主页
+        </button>
       </div>
     );
   }
@@ -276,9 +310,16 @@ export function GamePage() {
   }
 
   return (
-    <div className="min-h-screen p-4">
-      {/* 顶部 - 其他玩家 */}
-      <div className="flex justify-center gap-4 mb-8">
+    <div
+      className="min-h-screen p-4 bg-cover bg-center bg-fixed"
+      style={{ backgroundImage: 'url(/assets/board/game_board.png)' }}
+    >
+      {/* Dark overlay for better readability */}
+      <div className="fixed inset-0 bg-black/40 pointer-events-none" />
+      {/* Content wrapper with relative positioning */}
+      <div className="relative z-10">
+        {/* 顶部 - 其他玩家 */}
+        <div className="flex justify-center gap-4 mb-8">
         {gameState.opponents.map((opponent) => (
           <PlayerBoard
             key={opponent.id}
@@ -432,6 +473,7 @@ export function GamePage() {
           onCancel={() => setResonateTarget(null)}
         />
       )}
+      </div>{/* End of relative z-10 wrapper */}
     </div>
   );
 }
